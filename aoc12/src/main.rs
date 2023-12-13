@@ -1,4 +1,4 @@
-use std::fs::read_to_string;
+use std::{collections::HashMap, fs::read_to_string};
 
 fn read_lines(filename: &str) -> Vec<String> {
     let mut result = Vec::new();
@@ -7,23 +7,23 @@ fn read_lines(filename: &str) -> Vec<String> {
     }
     result
 }
-fn parse_input_a(input: &Vec<String>) -> Vec<(String, Vec<u8>)> {
+fn parse_input_a(input: &Vec<String>) -> Vec<(String, Vec<usize>)> {
     input
         .iter()
         .map(|line| {
             let mut split = line.split(" ");
-            let springs = split.next().unwrap().to_string();
+            let springs = split.next().unwrap().to_string() + ".";
             let constraints = split
                 .next()
                 .unwrap()
                 .split(",")
-                .map(|c| c.parse::<u8>().unwrap())
-                .collect::<Vec<u8>>();
+                .map(|c| c.parse::<usize>().unwrap())
+                .collect::<Vec<usize>>();
             (springs, constraints)
         })
-        .collect::<Vec<(String, Vec<u8>)>>()
+        .collect::<Vec<(String, Vec<usize>)>>()
 }
-fn parse_input_b(input: &Vec<String>) -> Vec<(String, Vec<u8>)> {
+fn parse_input_b(input: &Vec<String>) -> Vec<(String, Vec<usize>)> {
     input
         .iter()
         .map(|line| {
@@ -37,107 +37,114 @@ fn parse_input_b(input: &Vec<String>) -> Vec<(String, Vec<u8>)> {
                 .next()
                 .unwrap()
                 .split(",")
-                .map(|c| c.parse::<u8>().unwrap())
-                .collect::<Vec<u8>>();
+                .map(|c| c.parse::<usize>().unwrap())
+                .collect::<Vec<usize>>();
             let unfolded_constaints = [c.as_slice(), &c, &c, &c, &c].concat();
-            (unfolded, unfolded_constaints)
+            (unfolded + ".", unfolded_constaints)
         })
-        .collect::<Vec<(String, Vec<u8>)>>()
+        .collect::<Vec<(String, Vec<usize>)>>()
 }
 
-fn is_valid(spring: &String, constraints: &Vec<u8>) -> bool {
-    let mut index_constraint = 0;
-    let mut counter_continuity = 0;
-    let spring = spring.clone() + ".";
-    for c in spring.chars() {
-        if c == '#' {
-            if index_constraint == constraints.len() {
-                return false;
-            }
-            counter_continuity += 1;
-        } else {
-            if counter_continuity != 0 {
-                if counter_continuity == *constraints.get(index_constraint).unwrap() {
-                    counter_continuity = 0;
-                    index_constraint += 1;
-                } else {
-                    return false;
-                }
-            }
-        }
-    }
-    if index_constraint == constraints.len() {
-        return true;
-    }
-    if counter_continuity != 0 {
-        return counter_continuity == *constraints.get(index_constraint).unwrap();
-    }
-    false
-}
-
-fn is_valid_partial(spring: &String, constraints: &Vec<u8>, index: usize) -> bool {
-    let mut index_constraint = 0;
-    let mut counter_continuity = 0;
-    let spring = spring.clone();
-    for c in spring[..index].chars() {
-        if c == '#' {
-            if index_constraint == constraints.len() {
-                return false;
-            }
-            counter_continuity += 1;
-        } else {
-            if counter_continuity != 0 {
-                if counter_continuity == *constraints.get(index_constraint).unwrap() {
-                    counter_continuity = 0;
-                    index_constraint += 1;
-                } else {
-                    return false;
-                }
-            }
-        }
-        if counter_continuity != 0 {
-            if counter_continuity > *constraints.get(index_constraint).unwrap() {
-                return false;
-            }
-        }
-    }
-
-    true
-}
-
-fn count_arrangements(spring: &String, constraints: &Vec<u8>) -> u64 {
-    let mut arrangements: Vec<String> = vec![spring.clone()];
-    let mut index = 0;
-    loop {
-        let arrangement = arrangements.get(index).unwrap();
-        match arrangement.find("?") {
-            Some(k) => {
-                let s1 = arrangement.replacen("?", "#", 1);
-                let s2 = arrangement.replacen("?", ".", 1);
-                if is_valid_partial(&s1, constraints, k) {
-                    arrangements.push(s1);
-                }
-                if is_valid_partial(&s2, constraints, k) {
-                    arrangements.push(s2);
-                }
-            }
-            None => break,
-        }
-        index += 1;
-    }
-
-    let a = arrangements[index..]
+fn count_arrangements(
+    spring: &str,
+    constraints: &[usize],
+    cache: &mut HashMap<String, u64>,
+) -> u64 {
+    let key = constraints
         .iter()
-        .filter(|s| is_valid(s, constraints))
-        .count() as u64;
-    drop(arrangements);
-    a
+        .map(|c| c.to_string())
+        .collect::<String>()
+        + &spring;
+    match cache.get(&key) {
+        Some(result) => return *result,
+        None => (),
+    }
+
+    if constraints.len() == 0 {
+        match spring.find("#") {
+            Some(_) => return 0,
+            None => return 1,
+        }
+    }
+    if spring.len() == 0 {
+        return 0;
+    }
+
+    match &spring[..1] {
+        "." => return count_arrangements(&spring[1..], constraints, cache),
+        "#" => {
+            let current_constraint = constraints[0];
+            if current_constraint > spring.len() {
+                return 0;
+            }
+            if !spring[..current_constraint]
+                .chars()
+                .all(|c| c == '#' || c == '?')
+            {
+                return 0;
+            }
+            if spring.len() == current_constraint {
+                if constraints.len() == 1 {
+                    return 1;
+                } else {
+                    return 0;
+                }
+            }
+            if spring[current_constraint..current_constraint + 1]
+                .matches(|c| c == '?' || c == '.')
+                .count()
+                != 0
+            {
+                let result =
+                    count_arrangements(&spring[current_constraint + 1..], &constraints[1..], cache);
+                let key = constraints[1..]
+                    .iter()
+                    .map(|c| c.to_string())
+                    .collect::<String>()
+                    + &spring[current_constraint + 1..];
+                cache.insert(key, result);
+                return result;
+            } else {
+                return 0;
+            }
+        }
+        "?" => {
+            let result = count_arrangements(&spring[1..], constraints, cache);
+            let key = constraints
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<String>()
+                + &spring[1..];
+            cache.insert(key, result);
+
+            let result2 = count_arrangements(
+                &("#".to_string() + &spring[1..].to_string()),
+                constraints,
+                cache,
+            );
+            let key = constraints
+                .iter()
+                .map(|c| c.to_string())
+                .collect::<String>()
+                + "#"
+                + &spring[1..];
+            cache.insert(key, result2);
+
+            return result + result2;
+        }
+        _ => (),
+    };
+
+    0
 }
 
 fn solve_part_a(input: &Vec<String>) -> u64 {
     parse_input_a(input)
         .iter()
-        .map(|(spring, constraints)| count_arrangements(spring, constraints))
+        .map(|(spring, constraints)| {
+            let mut cache: HashMap<String, u64> = HashMap::new();
+            count_arrangements(&spring, &constraints, &mut cache)
+        })
         .collect::<Vec<u64>>()
         .iter()
         .sum()
@@ -146,7 +153,10 @@ fn solve_part_a(input: &Vec<String>) -> u64 {
 fn solve_part_b(input: &Vec<String>) -> u64 {
     parse_input_b(input)
         .iter()
-        .map(|(spring, c)| count_arrangements(&spring, &c))
+        .map(|(spring, c)| {
+            let mut cache: HashMap<String, u64> = HashMap::new();
+            count_arrangements(&spring, &c, &mut cache)
+        })
         .collect::<Vec<u64>>()
         .iter()
         .sum()
