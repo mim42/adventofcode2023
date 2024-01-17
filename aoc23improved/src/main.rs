@@ -146,13 +146,23 @@ fn build_vertices(map: &Vec<Vec<String>>) -> (usize, [[(usize, u64); 4]; 64]) {
             );
         }
     }
+    // the end point is not necessarily a junction so we find the last junction and use that instead and its length
+    // this allows us for -1 depth in the search
     (index_counter, new_vertices)
 }
 
 fn solve_part_b(input: &Vec<String>) -> u64 {
     let map = parse_input(input);
     let (end_index, vertices) = build_vertices(&map);
-    find_longest(0, end_index, &vertices, &mut [false; 64], 0)
+    let (end_index, end_length) = vertices[end_index][0];
+    let (start_index, start_length) = vertices[0][0];
+    find_longest(
+        start_index,
+        end_index,
+        &vertices,
+        &mut [false; 64],
+        end_length + start_length,
+    )
 }
 
 fn main() {
