@@ -1,4 +1,4 @@
-use std::{collections::HashMap, collections::HashSet, fs::read_to_string};
+use std::{collections::HashSet, fs::read_to_string};
 
 fn read_lines(filename: &str) -> Vec<String> {
     let mut result = Vec::new();
@@ -116,21 +116,21 @@ fn find_longest_a(point: &Point, map: &Vec<Vec<String>>, mut visited: HashSet<Po
 
 // simple dfs into our constructed graph with important vertices
 fn find_longest_b(
-    point: &Point,
-    end_point: &Point,
-    vertices: &HashMap<Point, HashMap<Point, u64>>,
-    mut visited: Vec<Point>,
+    point_index: usize,
+    end_index: usize,
+    vertices: &[[(usize, u64); 4]; 40],
+    visited: &mut [bool; 40],
     length: u64,
 ) -> u64 {
-    if point == end_point {
+    if point_index == end_index {
         return length;
     }
-    visited.push(point.clone());
-    let next_points = vertices.get(point).unwrap();
     let mut max_value = 0;
-    for (k, v) in next_points {
-        if !visited.contains(k) {
-            let result = find_longest_b(k, end_point, vertices, visited.clone(), length + *v);
+    for (k, v) in vertices[point_index] {
+        if v != 0 && !visited[point_index] {
+            visited[point_index] = true;
+            let result = find_longest_b(k, end_index, vertices, visited, length + v);
+            visited[point_index] = false;
             if result > max_value {
                 max_value = result;
             }
@@ -140,22 +140,23 @@ fn find_longest_b(
 }
 
 fn populate_vertices(
-    vertex: Point,
+    vertex_index: usize,
     map: &Vec<Vec<String>>,
-    vertices: &mut HashMap<Point, HashMap<Point, u64>>,
+    vertices: &mut [(Point, [(Point, u64); 4]); 40],
 ) {
-    let mut visited: HashSet<Point> = HashSet::new();
+    let mut visited: Vec<Point> = Vec::new();
     let mut next_steps: Vec<(Point, u64)> = Vec::new();
-    next_steps.push((vertex, 0));
+    next_steps.push((vertices[vertex_index].0, 0));
     let steps: [(i32, i32); 4] = [(0, 1), (1, 0), (0, -1), (-1, 0)];
-
+    let mut neighbor_counter = 0;
     // we bfs into the maze till as we find other important vertice and we mark it with the length from our initial vertex
     while !next_steps.is_empty() {
         let (current, length) = next_steps.remove(0);
-        visited.insert(current);
-        if vertices.contains_key(&current) && current != vertex {
-            let v = vertices.get_mut(&vertex).unwrap();
-            (*v).insert(current, length);
+        visited.push(current.clone());
+
+        if vertices.iter().any(|(e, _)| e == &current) && current != vertices[vertex_index].0 {
+            vertices[vertex_index].1[neighbor_counter] = (current, length);
+            neighbor_counter += 1;
         } else {
             for dir in 0..4 {
                 let (step_x, step_y) = steps[dir];
@@ -186,17 +187,14 @@ fn populate_vertices(
     }
 }
 
-fn build_vertices(map: &Vec<Vec<String>>) -> HashMap<Point, HashMap<Point, u64>> {
-    let mut vertices: HashMap<Point, HashMap<Point, u64>> = HashMap::new();
-    vertices.insert(Point { x: 0, y: 1 }, HashMap::new());
-    vertices.insert(
-        Point {
-            x: map.len() - 1,
-            y: map[0].len() - 2,
-        },
-        HashMap::new(),
-    );
+fn build_vertices(map: &Vec<Vec<String>>) -> (usize, [[(usize, u64); 4]; 40]) {
+    let mut vertices: [(Point, [(Point, u64); 4]); 40] =
+        [(Point { x: 0, y: 0 }, [(Point { x: 0, y: 0 }, 0); 4]); 40];
+
+    vertices[0] = (Point { x: 0, y: 1 }, [(Point { x: 0, y: 0 }, 0); 4]);
+
     // find all vertices of importance, (ie where we split ways)
+    let mut index_counter: usize = 1;
     for x in 1..map.len() - 1 {
         for y in 1..map[0].len() - 1 {
             if map[x][y] == "#" {
@@ -215,15 +213,36 @@ fn build_vertices(map: &Vec<Vec<String>>) -> HashMap<Point, HashMap<Point, u64>>
                 }
             }
             if counter >= 3 {
-                vertices.insert(Point { x, y }, HashMap::new());
+                vertices[index_counter] = (Point { x, y }, [(Point { x: 0, y: 0 }, 0); 4]);
+                index_counter += 1;
             }
         }
     }
-    // for every vertex build its hashmap of connected vertices and their distance from them.
-    for (i, _) in vertices.clone() {
+    vertices[index_counter] = (
+        Point {
+            x: map.len() - 1,
+            y: map[0].len() - 2,
+        },
+        [(Point { x: 0, y: 0 }, 0); 4],
+    );
+
+    // for every vertex find connected vertices and their distance from them.
+    for i in 0..=index_counter {
         populate_vertices(i, map, &mut vertices);
     }
-    vertices
+    // each index should be pointing to another index with a distance
+    let mut new_vertices = [[(0, 0); 4]; 40];
+    for i in 0..=index_counter {
+        let (_, list) = vertices[i];
+        for (index, (point, length)) in list.iter().filter(|&(_, v)| *v != 0).enumerate() {
+            new_vertices[i][index] = (
+                vertices.iter().position(|(p, _)| p == point).unwrap(),
+                *length,
+            );
+        }
+    }
+
+    (index_counter, new_vertices)
 }
 
 fn solve_part_a(input: &Vec<String>) -> u64 {
@@ -233,16 +252,16 @@ fn solve_part_a(input: &Vec<String>) -> u64 {
 
 fn solve_part_b(input: &Vec<String>) -> u64 {
     let map = parse_input(input);
-    let vertices = build_vertices(&map);
+    let (end_index, vertices) = build_vertices(&map);
+    let (end_index, end_length) = vertices[end_index][0];
+    let (start_index, start_length) = vertices[0][0];
+
     find_longest_b(
-        &Point { x: 0, y: 1 },
-        &(Point {
-            x: map.len() - 1,
-            y: map[0].len() - 2,
-        }),
+        start_index,
+        end_index,
         &vertices,
-        Vec::new(),
-        0,
+        &mut [false; 40],
+        end_length + start_length,
     )
 }
 
